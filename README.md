@@ -1,8 +1,8 @@
-Discord RSS Bot (Elysia/Bun Version)
+# Discord RSS Bot (Elysia/Bun)
 
 A simple Discord bot rewritten in TypeScript using Bun and ElysiaJS.
 
-Features
+### Features
 
 Stack: Bun + ElysiaJS + Discord.js.
 
@@ -12,11 +12,11 @@ Web Server: Includes a health check endpoint via Elysia at http://localhost:3000
 
 Persistence: Uses local JSON files to track news state and channel subscriptions.
 
-Setup
+## Setup
 
 1. Prerequisites
 
-Bun installed (curl -fsSL https://bun.sh/install | bash).
+Bun installed `(curl -fsSL https://bun.sh/install | bash)`.
 
 A Discord Bot Token.
 
@@ -24,27 +24,26 @@ A Discord Bot Token.
 
 Install dependencies:
 
-bun install
-
+`bun install`
 
 Create a .env file:
-
+```
 DISCORD_TOKEN=your_token_here
-RSS_URL=[https://rss.app/feeds/COiTZRnT26oDqrJf.xml](https://rss.app/feeds/COiTZRnT26oDqrJf.xml)
-
+RSS_URL=https://rss.app/feeds/sadasd.xml
+```
 
 3. Running Locally
 
 Start the bot and the web server:
 
-bun start
+`bun start`
 
 
-Docker Deployment
+## Docker Deployment
 
 1. Build the Image
 
-docker build -t rss-bot-elysia .
+`docker build -t rss-bot-elysia`
 
 
 2. Run with Persistence
@@ -59,35 +58,29 @@ docker run -d --env-file .env -v "$(pwd):/app" -p 3000:3000 --name my-rss-bot --
 
 
 Windows CMD:
+```
+docker run -d --env-file .env -v "%cd%:/app" -p 3000:3000 --name my-rss-bot --restart always rss-bot-elysia
+```
 
-docker run -d ^
-  --env-file .env ^
-  -v "%cd%:/app" ^
-  -p 3000:3000 ^
-  --name my-rss-bot ^
-  --restart always ^
-  rss-bot-elysia
+## Usage
 
+### Commands
 
-Usage
+`!subscribe_sheapgamer` - Set the current channel for news updates.
 
-Commands
+`!unsubscribe_sheapgamer` - Stop receiving news in the current server.
 
-!setnews - Set the current channel for news updates.
-
-!unsentnews - Stop receiving news in the current server.
-
-Invite the Bot
+### Invite the Bot
 
 When the bot starts, look at the console logs. It will print a generated Invite Link that you can use to add the bot to your server.
 
-Health Check
+### Health Check
 
 You can verify the bot is running by visiting:
-http://localhost:3000/health
+`http://localhost:3000/health`
 
-Testing
+### Testing
 
 Run the unit tests using Bun's built-in test runner:
 
-bun test
+`bun test`
