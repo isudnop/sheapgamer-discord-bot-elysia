@@ -39,6 +39,31 @@ Start the bot and the web server:
 `bun start`
 
 
+## Cloud Deployment: Railway (Recommended)
+
+Create Project: Connect your GitHub repository to Railway.
+
+Variables: Add DISCORD_TOKEN and RSS_URL in the "Variables" tab.
+
+Persistence (Crucial):
+
+Go to the Volumes tab in your service.
+
+Click "Add Volume".
+
+Set the Mount Path to /app/data.
+
+Why? This ensures channels.json and news_state.json are saved to a virtual disk. Without this, your bot will lose all data every time you redeploy.
+
+Health Check:
+
+Railway may automatically detect the web server.
+
+You can explicitly set the Healthcheck Path to /health in Settings -> Deploy.
+
+
+
+
 ## Docker Deployment
 
 1. Build the Image

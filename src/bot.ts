@@ -1,8 +1,10 @@
 import { Client, GatewayIntentBits, TextChannel, EmbedBuilder, PermissionsBitField } from 'discord.js';
 import fs from 'fs';
+import path from 'path';
 import { RssService } from './rssService';
 
-const SUBSCRIPTION_FILE = "channels.json";
+// Save inside the 'data' folder
+const SUBSCRIPTION_FILE = "data/channels.json";
 
 interface Subscriptions {
     [guildId: string]: string;
@@ -15,9 +17,12 @@ export class DiscordBot {
 
     constructor(token: string, rssUrl: string | undefined) {
         this.token = token;
+        
+        // Ensure data directory exists
+        this.ensureDataDir();
+
         this.rssService = rssUrl ? new RssService(rssUrl) : null;
 
-        // Initialize Discord Client
         this.client = new Client({
             intents: [
                 GatewayIntentBits.Guilds,
@@ -27,6 +32,13 @@ export class DiscordBot {
         });
 
         this.registerEvents();
+    }
+
+    private ensureDataDir() {
+        const dir = path.dirname(SUBSCRIPTION_FILE);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
     }
 
     private loadSubscriptions(): Subscriptions {
@@ -58,17 +70,6 @@ export class DiscordBot {
         this.client.on('ready', () => {
             console.log(`Logged in as ${this.client.user?.tag}`);
             
-            // Generate Invite Link
-            const permissions = [
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.EmbedLinks,
-                PermissionsBitField.Flags.ReadMessageHistory
-            ];
-            
-            // Note: In discord.js invite generation is slightly different, 
-            // but we can construct the URL manually or use generateInvite if needed.
-            // Simplified URL construction for console output:
             const clientId = this.client.user?.id;
             const link = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&permissions=274878024768&scope=bot`;
             
@@ -76,27 +77,24 @@ export class DiscordBot {
             console.log(`👉 INVITE LINK: ${link}`);
             console.log("----------------------------------------------------------------");
 
-            // Start the Loop (Every 20 minutes)
             this.runFeedCheck();
             setInterval(() => this.runFeedCheck(), 20 * 60 * 1000);
         });
 
         this.client.on('messageCreate', async (message) => {
             if (message.author.bot) return;
-
-            // Check for admin permissions
             if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) return;
 
-            if (message.content === '!subscribe_sheapgamer') {
+            if (message.content === '!setnews') {
                 this.saveSubscription(message.guildId!, message.channelId);
-                await message.channel.send(`✅ ตั้งช่องข่าวสารเป็น <#${message.channelId}> เรียบร้อยแล้วค่ะ วาริรินจะโพสต์ข่าวสารที่นี่ค่ะ.`);
+                await message.channel.send(`✅ วาริรินตั้งค่าช่องข่าวสารแล้วค่ะ ช่องข่าวสารคือ <#${message.channelId}> จะโพสต์ข่าวสารที่นี่ค่ะ`);
             }
 
-            if (message.content === '!unsubscribe_sheapgamer') {
+            if (message.content === '!unsentnews') {
                 if (this.removeSubscription(message.guildId!)) {
-                    await message.channel.send("✅ หยุดการอัปเดตข่าวสารสำหรับเซิร์ฟเวอร์นี้แล้วค่ะ.");
+                    await message.channel.send("✅ วาริรินยกเลิกการตั้งค่าช่องข่าวสารแล้วค่ะ");
                 } else {
-                    await message.channel.send("ℹ️ ยังไม่มีการตั้งค่าช่องข่าวสารสำหรับเซิร์ฟเวอร์นี้ค่ะ.");
+                    await message.channel.send("ℹ️ ยังไม่มีการตั้งค่าช่องข่าวสารค่ะ");
                 }
             }
         });
@@ -119,12 +117,11 @@ export class DiscordBot {
         console.log(`Found ${newItems.length} new items. Broadcasting...`);
         const subs = this.loadSubscriptions();
 
-        // Items are usually newest first from RSS, but our logic pushed them in order.
-        // We broadcast them.
         for (const item of newItems) {
             const embed = new EmbedBuilder()
                 .setTitle(item.title)
                 .setURL(item.link)
+                //.setDescription(item.summary) 
                 .setColor(0x00ff00)
                 .setFooter({ text: "ข่าวล่ามาไวจากเกมถูก" });
 
@@ -132,7 +129,6 @@ export class DiscordBot {
                 embed.setImage(item.image);
             }
 
-            // Send to all channels
             for (const [guildId, channelId] of Object.entries(subs)) {
                 try {
                     const channel = await this.client.channels.fetch(channelId) as TextChannel;
