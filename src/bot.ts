@@ -2,8 +2,8 @@ import { Client, GatewayIntentBits, TextChannel, EmbedBuilder, PermissionsBitFie
 import fs from 'fs';
 import path from 'path';
 import { RssService } from './rssService';
+import { YoutubeService } from './youtubeService';
 
-// Save inside the 'data' folder
 const SUBSCRIPTION_FILE = "data/channels.json";
 
 interface Subscriptions {
@@ -13,15 +13,16 @@ interface Subscriptions {
 export class DiscordBot {
     private client: Client;
     private rssService: RssService | null;
+    private youtubeService: YoutubeService | null;
     private token: string;
 
-    constructor(token: string, rssUrl: string | undefined) {
+    constructor(token: string, rssUrl: string | undefined, youtubeChannelId: string | undefined) {
         this.token = token;
         
-        // Ensure data directory exists
         this.ensureDataDir();
 
         this.rssService = rssUrl ? new RssService(rssUrl) : null;
+        this.youtubeService = youtubeChannelId ? new YoutubeService(youtubeChannelId) : null;
 
         this.client = new Client({
             intents: [
@@ -77,8 +78,11 @@ export class DiscordBot {
             console.log(`👉 INVITE LINK: ${link}`);
             console.log("----------------------------------------------------------------");
 
-            this.runFeedCheck();
-            setInterval(() => this.runFeedCheck(), 20 * 60 * 1000);
+            // Initial Run
+            this.runTasks();
+            
+            // Loop every 10 minutes
+            setInterval(() => this.runTasks(), 10 * 60 * 1000);
         });
 
         this.client.on('messageCreate', async (message) => {
@@ -87,7 +91,7 @@ export class DiscordBot {
 
             if (message.content === '!subscribe_sheapgamer') {
                 this.saveSubscription(message.guildId!, message.channelId);
-                await message.channel.send(`✅ วาริรินตั้งค่าช่องข่าวสารแล้วค่ะ ช่องข่าวสารคือ <#${message.channelId}> จะโพสต์ข่าวสารที่นี่ค่ะ`);
+                await message.channel.send(`✅ วาริรินตั้งค่าช่องข่าวสารแล้วค่ะ ช่องข่าวสารคือ  <#${message.channelId}> จะโพสต์ข่าวสารที่นี่ค่ะ`);
             }
 
             if (message.content === '!unsubscribe_sheapgamer') {
@@ -100,44 +104,73 @@ export class DiscordBot {
         });
     }
 
-    private async runFeedCheck() {
-        if (!this.rssService) {
-            console.log("RSS Service not initialized.");
-            return;
-        }
+    private async runTasks() {
+        await this.checkRss();
+        await this.checkYoutube();
+    }
 
-        console.log("Checking for news...");
+    private async checkRss() {
+        if (!this.rssService) return;
+
+        console.log("Checking for RSS news...");
         const newItems = await this.rssService.checkForNews();
 
-        if (newItems.length === 0) {
-            console.log("No new items found.");
-            return;
-        }
+        if (newItems.length > 0) {
+            console.log(`Found ${newItems.length} new RSS items.`);
+            const subs = this.loadSubscriptions();
 
-        console.log(`Found ${newItems.length} new items. Broadcasting...`);
-        const subs = this.loadSubscriptions();
+            for (const item of newItems) {
+                const embed = new EmbedBuilder()
+                    .setTitle(item.title)
+                    .setURL(item.link)
+                    .setColor(0x00ff00) // Green for News
+                    .setFooter({ text: "ข่าวล่ามาไวจากเกมถูก" });
 
-        for (const item of newItems) {
-            const embed = new EmbedBuilder()
-                .setTitle(item.title)
-                .setURL(item.link)
-                //.setDescription(item.summary) 
-                .setColor(0x00ff00)
-                .setFooter({ text: "ข่าวล่ามาไวจากเกมถูก" });
-
-            if (item.image) {
-                embed.setImage(item.image);
-            }
-
-            for (const [guildId, channelId] of Object.entries(subs)) {
-                try {
-                    const channel = await this.client.channels.fetch(channelId) as TextChannel;
-                    if (channel) {
-                        await channel.send({ embeds: [embed] });
-                    }
-                } catch (e) {
-                    console.error(`Failed to send to guild ${guildId}:`, e);
+                if (item.image) {
+                    embed.setImage(item.image);
                 }
+
+                await this.broadcastEmbed(embed, subs);
+            }
+        }
+    }
+
+    private async checkYoutube() {
+        if (!this.youtubeService) return;
+
+        console.log("Checking for YouTube videos...");
+        const newVideos = await this.youtubeService.checkNewVideos();
+
+        if (newVideos.length > 0) {
+            console.log(`Found ${newVideos.length} new YouTube videos.`);
+            const subs = this.loadSubscriptions();
+
+            for (const video of newVideos) {
+                const embed = new EmbedBuilder()
+                    .setTitle(video.title)
+                    .setURL(video.link)
+                    .setColor(0xFF0000) // Red for YouTube
+                    .setAuthor({ name: video.author })
+                    .setFooter({ text: "YouTube Sheapgamer มีวิดีโอใหม่ค่ะ" });
+
+                if (video.thumbnail) {
+                    embed.setImage(video.thumbnail);
+                }
+
+                await this.broadcastEmbed(embed, subs);
+            }
+        }
+    }
+
+    private async broadcastEmbed(embed: EmbedBuilder, subs: Subscriptions) {
+        for (const [guildId, channelId] of Object.entries(subs)) {
+            try {
+                const channel = await this.client.channels.fetch(channelId) as TextChannel;
+                if (channel) {
+                    await channel.send({ embeds: [embed] });
+                }
+            } catch (e) {
+                console.error(`Failed to send to guild ${guildId}:`, e);
             }
         }
     }

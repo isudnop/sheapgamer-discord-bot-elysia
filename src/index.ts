@@ -1,8 +1,8 @@
 import { Elysia } from 'elysia';
 import { DiscordBot } from './bot';
 
-// Check Environment Variables
 const RSS_URL = process.env.RSS_URL;
+const YOUTUBE_CHANNEL_ID = process.env.YOUTUBE_CHANNEL_ID;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 
 if (!DISCORD_TOKEN) {
@@ -10,13 +10,16 @@ if (!DISCORD_TOKEN) {
     process.exit(1);
 }
 
-// 1. Start Discord Bot
+// Start Discord Bot
 console.log("Starting Discord Bot...");
-const bot = new DiscordBot(DISCORD_TOKEN, RSS_URL);
+if (YOUTUBE_CHANNEL_ID) {
+    console.log(`📺 YouTube monitoring enabled for channel: ${YOUTUBE_CHANNEL_ID}`);
+}
+
+const bot = new DiscordBot(DISCORD_TOKEN, RSS_URL, YOUTUBE_CHANNEL_ID);
 bot.start();
 
-// 2. Start Elysia Server (Health Check)
-// This keeps the process alive and gives you a URL to ping
+// Start Elysia Server (Health Check)
 const app = new Elysia()
     .get("/", () => "🤖 Discord RSS Bot is Running!")
     .get("/health", () => {
