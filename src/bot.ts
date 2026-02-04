@@ -162,15 +162,24 @@ export class DiscordBot {
         }
     }
 
+
     private async broadcastEmbed(embed: EmbedBuilder, subs: Subscriptions) {
         for (const [guildId, channelId] of Object.entries(subs)) {
             try {
                 const channel = await this.client.channels.fetch(channelId) as TextChannel;
                 if (channel) {
-                    await channel.send({ embeds: [embed] });
+                    // Send the message
+                    const message = await channel.send({ embeds: [embed] });
+
+                    // --- NEW: Auto-Publish (Crosspost) ---
+                    // This pushes the message to all servers following this channel
+                    if (message.crosspostable) {
+                        await message.crosspost();
+                        console.log(`Published (Crossposted) message in guild ${guildId}`);
+                    }
                 }
             } catch (e) {
-                console.error(`Failed to send to guild ${guildId}:`, e);
+                console.error(`Failed to send/publish to guild ${guildId}:`, e);
             }
         }
     }
