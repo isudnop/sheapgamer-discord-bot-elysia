@@ -101,12 +101,43 @@ export class DiscordBot {
                     await message.channel.send("ℹ️ ยังไม่มีการตั้งค่าช่องข่าวสารค่ะ");
                 }
             }
+
+            if (message.content === '!forcenews_sheapgamer') {
+                await message.channel.send("🔄 ส่งข่าวล่าสุดอีกครั้งค่ะ");
+                await this.forcePublishNews();
+            }
         });
     }
 
     private async runTasks() {
         await this.checkRss();
         await this.checkYoutube();
+    }
+
+    private async forcePublishNews() {
+        if (!this.rssService) return;
+
+        console.log("Forcing latest news publish...");
+        const item = await this.rssService.forceFetchLatest();
+
+        if (item) {
+            console.log(`Force publishing item: ${item.title}`);
+            const subs = this.loadSubscriptions();
+
+            const embed = new EmbedBuilder()
+                .setTitle(item.title)
+                .setURL(item.link)
+                .setColor(0x00ff00)
+                .setFooter({ text: "ข่าวล่ามาไวจากเกมถูก" });
+
+            if (item.image) {
+                embed.setImage(item.image);
+            }
+
+            await this.broadcastEmbed(embed, subs);
+        } else {
+            console.log("No news found to force publish.");
+        }
     }
 
     private async checkRss() {

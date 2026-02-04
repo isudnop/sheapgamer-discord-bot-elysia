@@ -129,4 +129,17 @@ export class RssService {
             return [];
         }
     }
+    
+    async forceFetchLatest(): Promise<NewsItem | null> {
+        try {
+            const feed = await this.parser.parseURL(this.feedUrl);
+            if (!feed.items || feed.items.length === 0) return null;
+
+            // Just grab the first one
+            return this.parseItem(feed.items[0]);
+        } catch (error) {
+            console.error("Error fetching RSS (Force):", error);
+            return null;
+        }
+    }
 }
