@@ -149,7 +149,7 @@ export class RssService {
             return [];
         }
     }
-    
+
     async forceFetchLatest(): Promise<NewsItem | null> {
         try {
             const feed = await this.parser.parseURL(this.feedUrl);
