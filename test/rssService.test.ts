@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import fs from 'fs';
-import { RssService } from "../src/rssService";
+import { RssService } from "@/services/rssService";
 
 // We will mock the parser by extending the class or mocking the method
 // However, mocking external libraries in Bun is simpler by creating a temporary file

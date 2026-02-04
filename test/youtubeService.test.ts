@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import fs from 'fs';
 import path from 'path';
-import { YoutubeService } from "../src/youtubeService";
+import { YoutubeService } from "@/services/youtubeService";
 
 const TEST_DB = "data/test_yt_state.json";
 
