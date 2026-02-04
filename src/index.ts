@@ -1,5 +1,5 @@
 import { Elysia } from 'elysia';
-import { DiscordBot } from '@/services/bot';
+import { DiscordBot } from './services/bot';
 
 const RSS_URL = Bun.env.RSS_URL;
 const YOUTUBE_CHANNEL_ID = Bun.env.YOUTUBE_CHANNEL_ID;
