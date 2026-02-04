@@ -97,12 +97,43 @@ export class DiscordBot {
                     await message.channel.send("ℹ️ ยังไม่มีการตั้งค่าช่องข่าวสารค่ะ");
                 }
             }
+
+            if (message.content === '!forcenews_sheapgamer') {
+                await message.channel.send("🔄 ส่งข่าวล่าสุดอีกครั้งค่ะ");
+                await this.forcePublishNews();
+            }
         });
     }
 
     private async runTasks() {
         await this.checkRss();
         await this.checkYoutube();
+    }
+
+    private async forcePublishNews() {
+        if (!this.rssService) return;
+
+        console.log("Forcing latest news publish...");
+        const item = await this.rssService.forceFetchLatest();
+
+        if (item) {
+            console.log(`Force publishing item: ${item.title}`);
+            const subs = this.loadSubscriptions();
+
+            const embed = new EmbedBuilder()
+                .setTitle(item.title)
+                .setURL(item.link)
+                .setColor(0x00ff00)
+                .setFooter({ text: "ข่าวล่ามาไวจากเกมถูก" });
+
+            if (item.image) {
+                embed.setImage(item.image);
+            }
+
+            await this.broadcastEmbed(embed, subs);
+        } else {
+            console.log("No news found to force publish.");
+        }
     }
 
     private async checkRss() {
@@ -158,15 +189,24 @@ export class DiscordBot {
         }
     }
 
+
     private async broadcastEmbed(embed: EmbedBuilder, subs: Subscriptions) {
         for (const [guildId, channelId] of Object.entries(subs)) {
             try {
                 const channel = await this.client.channels.fetch(channelId) as TextChannel;
                 if (channel) {
-                    await channel.send({ embeds: [embed] });
+                    // Send the message
+                    const message = await channel.send({ embeds: [embed] });
+
+                    // --- NEW: Auto-Publish (Crosspost) ---
+                    // This pushes the message to all servers following this channel
+                    if (message.crosspostable) {
+                        await message.crosspost();
+                        console.log(`Published (Crossposted) message in guild ${guildId}`);
+                    }
                 }
             } catch (e) {
-                console.error(`Failed to send to guild ${guildId}:`, e);
+                console.error(`Failed to send/publish to guild ${guildId}:`, e);
             }
         }
     }

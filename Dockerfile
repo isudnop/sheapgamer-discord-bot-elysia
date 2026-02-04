@@ -4,6 +4,7 @@ WORKDIR /app
 
 # install dependencies
 COPY package.json .
+COPY tsconfig.json .
 RUN bun install --production
 
 # copy source code
