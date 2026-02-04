@@ -1,9 +1,9 @@
 import { Elysia } from 'elysia';
-import { DiscordBot } from './bot';
+import { DiscordBot } from '@/services/bot';
 
-const RSS_URL = process.env.RSS_URL;
-const YOUTUBE_CHANNEL_ID = process.env.YOUTUBE_CHANNEL_ID;
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const RSS_URL = Bun.env.RSS_URL;
+const YOUTUBE_CHANNEL_ID = Bun.env.YOUTUBE_CHANNEL_ID;
+const DISCORD_TOKEN = Bun.env.DISCORD_TOKEN;
 
 if (!DISCORD_TOKEN) {
     console.error("❌ Error: DISCORD_TOKEN is missing in .env");

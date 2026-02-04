@@ -1,19 +1,8 @@
 import Parser from 'rss-parser';
 import fs from 'fs';
 import path from 'path';
-
-export interface NewsItem {
-    title: string;
-    link: string;
-    summary: string;
-    guid: string;
-    image: string | null;
-}
-
-interface StateData {
-    last_seen_id: string | null;
-    updated_at: string;
-}
+import type { NewsItem, StateData } from '@/types';
+import { RSS_STATE_FILE } from '@/config/constants';
 
 export class RssService {
     private feedUrl: string;
@@ -21,7 +10,7 @@ export class RssService {
     private parser: Parser;
     private lastSeenId: string | null;
 
-    constructor(feedUrl: string, dbFile: string = "data/news_state.json") {
+    constructor(feedUrl: string, dbFile: string = RSS_STATE_FILE) {
         this.feedUrl = feedUrl;
         this.dbFile = dbFile;
         
@@ -38,7 +27,7 @@ export class RssService {
 
     private ensureDirectory() {
         const dir = path.dirname(this.dbFile);
-        if (!fs.existsSync(dir)) {
+        if (dir && dir !== '.' && !fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
     }
@@ -48,7 +37,7 @@ export class RssService {
             try {
                 const data = fs.readFileSync(this.dbFile, 'utf-8');
                 const json: StateData = JSON.parse(data);
-                return json.last_seen_id;
+                return json.last_seen_id || null;
             } catch (e) {
                 console.error("Error reading state file:", e);
             }

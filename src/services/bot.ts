@@ -1,14 +1,10 @@
 import { Client, GatewayIntentBits, TextChannel, EmbedBuilder, PermissionsBitField } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
-import { RssService } from './rssService';
-import { YoutubeService } from './youtubeService';
-
-const SUBSCRIPTION_FILE = "data/channels.json";
-
-interface Subscriptions {
-    [guildId: string]: string;
-}
+import { RssService } from '@/services/rssService';
+import { YoutubeService } from '@/services/youtubeService';
+import type { Subscriptions } from '@/types';
+import { SUBSCRIPTION_FILE, RSS_CHECK_INTERVAL } from '@/config/constants';
 
 export class DiscordBot {
     private client: Client;
@@ -82,7 +78,7 @@ export class DiscordBot {
             this.runTasks();
             
             // Loop every 10 minutes
-            setInterval(() => this.runTasks(), 10 * 60 * 1000);
+            setInterval(() => this.runTasks(), RSS_CHECK_INTERVAL);
         });
 
         this.client.on('messageCreate', async (message) => {

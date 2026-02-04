@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import fs from 'fs';
 import path from 'path';
-import { DiscordBot } from "../src/bot";
+import { DiscordBot } from "@/services/bot";
 
 // We mock the discord.js Client to avoid connecting to real Discord
 const mockLogin = mock(() => Promise.resolve("token"));
