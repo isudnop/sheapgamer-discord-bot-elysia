@@ -71,7 +71,7 @@ export class RssService {
         if ((item as any).mediaContent) {
             const media = (item as any).mediaContent;
             if (Array.isArray(media)) {
-                const img = media.find((m: any) => m.$?.medium === 'image' || m.$.url);
+                const img = media.find((m: any) => m.$?.medium === 'image' || m.$?.url);
                 if (img) imageUrl = img.$.url;
             } else if (media?.$?.url) {
                 imageUrl = media.$.url;
@@ -109,33 +109,7 @@ export class RssService {
                 const guid = item.guid || item.link || '';
                 if (guid === this.lastSeenId) break;
 
-                const rawSummary = item.summary || item.contentSnippet || '';
-                let cleanSummary = this.cleanHtml(rawSummary);
-                if (cleanSummary.length > 300) {
-                    cleanSummary = cleanSummary.substring(0, 297) + "...";
-                }
-
-                let imageUrl: string | null = null;
-                if ((item as any).mediaContent) {
-                    const media = (item as any).mediaContent;
-                    if (Array.isArray(media)) {
-                        const img = media.find((m: any) => m.$?.medium === 'image' || m.$.url);
-                        if (img) imageUrl = img.$.url;
-                    } else if (media?.$?.url) {
-                        imageUrl = media.$.url;
-                    }
-                }
-                if (!imageUrl && item.enclosure && item.enclosure.url && item.enclosure.type?.startsWith('image')) {
-                    imageUrl = item.enclosure.url;
-                }
-
-                newArticles.push({
-                    title: item.title || 'Untitled',
-                    link: item.link || '',
-                    summary: cleanSummary,
-                    guid: guid,
-                    image: imageUrl
-                });
+                newArticles.push(this.parseItem(item));
             }
 
             if (newArticles.length > 0) {

@@ -100,7 +100,7 @@ export class DiscordBot {
 
             if (message.content === '!forcenews_sheapgamer') {
                 await message.channel.send("🔄 ส่งข่าวล่าสุดอีกครั้งค่ะ");
-                await this.forcePublishNews();
+                await this.forcePublishNews(message.guildId!);
             }
         });
     }
@@ -110,7 +110,7 @@ export class DiscordBot {
         await this.checkYoutube();
     }
 
-    private async forcePublishNews() {
+    private async forcePublishNews(guildId: string) {
         if (!this.rssService) return;
 
         console.log("Forcing latest news publish...");
@@ -118,7 +118,10 @@ export class DiscordBot {
 
         if (item) {
             console.log(`Force publishing item: ${item.title}`);
-            const subs = this.loadSubscriptions();
+            // Only the guild that ran the command, never all subscribers
+            const channelId = this.loadSubscriptions()[guildId];
+            if (!channelId) return;
+            const subs = { [guildId]: channelId };
 
             const embed = new EmbedBuilder()
                 .setTitle(item.title)
