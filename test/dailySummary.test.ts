@@ -35,17 +35,17 @@ describe("Daily Summary", () => {
         const rss = new RssService("http://fake", TEST_STATE, TEST_ARCHIVE);
         fs.writeFileSync(TEST_SUMMARY_STATE, "{}"); // not a first deploy
         const summary = new SummaryService(rss, "test-key", TEST_SUMMARY_STATE);
-        expect(summary.isDue(new Date("2026-09-22T17:30:00Z"))).toBe(false); // 00:30 BKK, too early
-        expect(summary.isDue(new Date("2026-09-22T18:30:00Z"))).toBe(true);  // 01:30 BKK
+        expect(summary.isDue(new Date("2026-09-22T23:30:00Z"))).toBe(false); // 06:30 BKK, too early
+        expect(summary.isDue(new Date("2026-09-23T00:30:00Z"))).toBe(true);  // 07:30 BKK
         summary.markDone("2026-09-22");
-        expect(summary.isDue(new Date("2026-09-22T18:40:00Z"))).toBe(false);
+        expect(summary.isDue(new Date("2026-09-23T00:40:00Z"))).toBe(false);
     });
 
     it("gives up on a day after 3 failed attempts", () => {
         const rss = new RssService("http://fake", TEST_STATE, TEST_ARCHIVE);
         fs.writeFileSync(TEST_SUMMARY_STATE, "{}");
         const summary = new SummaryService(rss, "test-key", TEST_SUMMARY_STATE);
-        const now = new Date("2026-09-22T18:30:00Z");
+        const now = new Date("2026-09-23T00:30:00Z"); // 07:30 BKK
         summary.recordFailure("2026-09-22");
         summary.recordFailure("2026-09-22");
         expect(summary.isDue(now)).toBe(true);

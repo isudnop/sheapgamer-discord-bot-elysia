@@ -96,7 +96,7 @@ docker run -d --env-file .env -v "%cd%:/app" -p 3000:3000 --name my-rss-bot --re
 
 ### Daily Summary Changelogs
 
-When `GEMINI_API_KEY` is set, every day after 01:00 (Asia/Bangkok) the bot posts a patch-notes style summary of yesterday's News, Deals and Articles, written by Gemini. The bot archives every feed item in `data/news_archive.json` (kept 3 days) because the RSS feed only holds ~25 items.
+When `GEMINI_API_KEY` is set, every day after 07:00 (Asia/Bangkok) the bot posts a patch-notes style summary of yesterday's News, Deals and Articles, written by Gemini. The bot archives every feed item in `data/news_archive.json` (kept 3 days) because the RSS feed only holds ~25 items.
 
 ### Invite the Bot
 
