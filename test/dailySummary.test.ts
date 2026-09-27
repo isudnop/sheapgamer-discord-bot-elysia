@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import fs from 'fs';
 import { RssService, localDay } from "@/services/rssService";
-import { SummaryService, parseSections } from "@/services/summaryService";
+import { SummaryService, parseSections, isMeme } from "@/services/summaryService";
 
 const TEST_STATE = "test_summary_rss_state.json";
 const TEST_ARCHIVE = "test_summary_archive.json";
@@ -61,11 +61,18 @@ describe("Daily Summary", () => {
         expect(rss.getItemsForDay("2026-09-22")[0]!.content).toBe("ข่าวจริง\n .");
     });
 
+    it("detects memes", () => {
+        const item = (title: string, content: string) => ({ title, content, link: "", date: "" });
+        expect(isMeme(item("Untitled", ""))).toBe(true); // image only
+        expect(isMeme(item("[Meme] lol", "[Meme] lol"))).toBe(true);
+        expect(isMeme(item("[News] A", "[News] A game"))).toBe(false);
+    });
+
     it("splits model output into sections", () => {
-        const sections = parseSections("Here you go:\n## 📰 News\n**[NEW]** A\n\n## 💸 Deals\n**[BUFF]** B\n## Empty\n");
+        const sections = parseSections("Here you go:\n## 📰 News\n**[UPDATE]** A\n\n## 💸 Deals\n**[DEAL]** B\n## Empty\n");
         expect(sections).toEqual([
-            { title: "📰 News", body: "**[NEW]** A" },
-            { title: "💸 Deals", body: "**[BUFF]** B" },
+            { title: "📰 News", body: "**[UPDATE]** A" },
+            { title: "💸 Deals", body: "**[DEAL]** B" },
         ]);
     });
 });

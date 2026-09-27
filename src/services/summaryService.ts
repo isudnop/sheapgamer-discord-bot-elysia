@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { RssService, localDay } from '@/services/rssService';
+import type { ArchivedItem } from '@/types';
 import { SUMMARY_STATE_FILE, SUMMARY_HOUR, SUMMARY_TIMEZONE, GEMINI_MODEL } from '@/config/constants';
 
 const MAX_ATTEMPTS = 3;
@@ -18,7 +19,17 @@ const SYSTEM_PROMPT = `คุณคือ "วาริริน" ผู้ช�
   ## 💸 Deals
   ## 📝 Articles
 - แต่ละรายการเป็นหนึ่งบรรทัด ขึ้นต้นด้วยแท็กแบบ changelog แล้วตามด้วยสรุปสั้นๆ ภาษาไทย 1 ประโยค และลิงก์ในรูป [อ่านต่อ](url)
-  แท็กที่ใช้: **[NEW]** เปิดตัว/ประกาศเกมใหม่, **[UPDATE]** แพตช์/อัปเดต/ข่าวความคืบหน้า, **[BUFF]** ข่าวดี/ลดราคา/แจกฟรี, **[NERF]** ข่าวร้าย/ขึ้นราคา/เลื่อน/ปิดเซิร์ฟ, **[FIX]** แก้ปัญหา/แก้บั๊ก, **[EVENT]** อีเวนต์/งานแสดง
+  แท็กที่ใช้ (ใช้เฉพาะแท็กเหล่านี้เท่านั้น):
+  - หมวด News: **[EVENT]** สำหรับอีเวนต์/งานแสดง ส่วนข่าวอื่นทั้งหมดใช้ **[UPDATE]** ไม่ว่าจะเป็นข่าวดีหรือข่าวร้าย
+  - หมวด Deals: ใช้ **[DEAL]** ทุกรายการ
+  - หมวด Articles: ใช้ **[ARTICLE]** ทุกรายการ
+- จัดหมวดตามป้ายที่ขึ้นต้นโพสต์:
+  - [News], [Mods] และข่าวทั่วไป → News
+  - [Free] (แจกฟรี) และโพสต์ที่ไม่มีป้ายแต่ขึ้นต้นด้วยลิงก์ร้านค้าและบอกราคา/ส่วนลด → Deals
+  - [Article], [Review], [บทความ] หรือโพสต์เชิงบทความ/รีวิว → Articles
+  - ป้ายอื่นที่ไม่รู้จัก ให้เลือกหมวดที่ใกล้เคียงที่สุด
+- ไม่ต้องใส่ป้ายเดิมของโพสต์ (เช่น [News]) ในสรุป ใช้เฉพาะแท็กด้านบน
+- ข้ามโพสต์มีม ([Meme]) และโพสต์ที่เป็นแค่มุก/แคปชันสั้นๆ ที่ไม่มีเนื้อหาข่าว ดีล หรือบทความ
 - หมวด Deals ให้ใส่ชื่อเกม ราคา ร้านค้า และโค้ดคูปองถ้ามี
 - รวมโพสต์ที่พูดถึงเรื่องเดียวกันไว้เป็นรายการเดียว
 - ห้ามแต่งข้อมูลที่ไม่มีในโพสต์
@@ -76,7 +87,7 @@ export class SummaryService {
 
     // Returns null when there was nothing posted that day
     async summarize(day: string): Promise<SummarySection[] | null> {
-        const items = this.rssService.getItemsForDay(day);
+        const items = this.rssService.getItemsForDay(day).filter(item => !isMeme(item));
         if (items.length === 0) return null;
 
         const posts = items.map((item, i) =>
@@ -109,6 +120,11 @@ export class SummaryService {
         const text = (candidate.content?.parts ?? []).map((p: any) => p.text ?? '').join('');
         return parseSections(text);
     }
+}
+
+// Memes: labelled [Meme], or image-only posts with no caption. Short joke captions are left for the model to skip
+export function isMeme(item: ArchivedItem): boolean {
+    return !item.content.trim() || /^\s*\[meme\]/i.test(item.content || item.title);
 }
 
 // Splits "## Title\nbody" markdown into sections, capped to Discord's 4096-char embed description
