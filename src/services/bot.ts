@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { RssService } from '@/services/rssService';
 import { YoutubeService } from '@/services/youtubeService';
+import { SummaryService } from '@/services/summaryService';
 import type { Subscriptions } from '@/types';
 import { SUBSCRIPTION_FILE, RSS_CHECK_INTERVAL } from '@/config/constants';
 
@@ -10,15 +11,17 @@ export class DiscordBot {
     private client: Client;
     private rssService: RssService | null;
     private youtubeService: YoutubeService | null;
+    private summaryService: SummaryService | null;
     private token: string;
 
-    constructor(token: string, rssUrl: string | undefined, youtubeChannelId: string | undefined) {
+    constructor(token: string, rssUrl: string | undefined, youtubeChannelId: string | undefined, geminiApiKey?: string) {
         this.token = token;
         
         this.ensureDataDir();
 
         this.rssService = rssUrl ? new RssService(rssUrl) : null;
         this.youtubeService = youtubeChannelId ? new YoutubeService(youtubeChannelId) : null;
+        this.summaryService = this.rssService && geminiApiKey ? new SummaryService(this.rssService, geminiApiKey) : null;
 
         this.client = new Client({
             intents: [
@@ -100,17 +103,33 @@ export class DiscordBot {
 
             if (message.content === '!forcenews_sheapgamer') {
                 await message.channel.send("🔄 ส่งข่าวล่าสุดอีกครั้งค่ะ");
-                await this.forcePublishNews();
+                await this.forcePublishNews(message.guildId!);
+            }
+
+            if (message.content === '!summary_sheapgamer') {
+                if (!this.summaryService) {
+                    await message.channel.send("ℹ️ ยังไม่ได้เปิดใช้งาน Daily Summary ค่ะ (ต้องตั้งค่า GEMINI_API_KEY)");
+                    return;
+                }
+                const channelId = this.loadSubscriptions()[message.guildId!];
+                if (!channelId) {
+                    await message.channel.send("ℹ️ ยังไม่มีการตั้งค่าช่องข่าวสารค่ะ");
+                    return;
+                }
+                await message.channel.send("🔄 วาริรินกำลังสรุปข่าวเมื่อวานค่ะ รอสักครู่นะคะ");
+                // Only this guild, never all subscribers
+                await this.postDailySummary(SummaryService.yesterday(), { [message.guildId!]: channelId });
             }
         });
     }
 
     private async runTasks() {
         await this.checkRss();
+        await this.checkDailySummary();
         await this.checkYoutube();
     }
 
-    private async forcePublishNews() {
+    private async forcePublishNews(guildId: string) {
         if (!this.rssService) return;
 
         console.log("Forcing latest news publish...");
@@ -118,7 +137,10 @@ export class DiscordBot {
 
         if (item) {
             console.log(`Force publishing item: ${item.title}`);
-            const subs = this.loadSubscriptions();
+            // Only the guild that ran the command, never all subscribers
+            const channelId = this.loadSubscriptions()[guildId];
+            if (!channelId) return;
+            const subs = { [guildId]: channelId };
 
             const embed = new EmbedBuilder()
                 .setTitle(item.title)
@@ -159,6 +181,44 @@ export class DiscordBot {
 
                 await this.broadcastEmbed(embed, subs);
             }
+        }
+    }
+
+    private async checkDailySummary() {
+        if (!this.summaryService?.isDue()) return;
+
+        const day = SummaryService.yesterday();
+        if (await this.postDailySummary(day, this.loadSubscriptions())) {
+            this.summaryService.markDone(day);
+        } else {
+            this.summaryService.recordFailure(day);
+        }
+    }
+
+    // Returns false on failure so the scheduled run retries on the next tick
+    private async postDailySummary(day: string, subs: Subscriptions): Promise<boolean> {
+        console.log(`Building daily summary for ${day}...`);
+        try {
+            const sections = await this.summaryService!.summarize(day);
+            if (!sections) {
+                console.log(`No news on ${day}, skipping summary.`);
+                return true;
+            }
+
+            // One embed per message: Discord caps a message's embeds at 6000 chars total
+            for (const [i, section] of sections.entries()) {
+                const embed = new EmbedBuilder()
+                    .setTitle(section.title)
+                    .setDescription(section.body)
+                    .setColor(0xFFA500); // Orange for Daily Summary
+                if (i === 0) embed.setAuthor({ name: `📜 Sheapgamer Changelog — ${day}` });
+                if (i === sections.length - 1) embed.setFooter({ text: "สรุปข่าวเมื่อวานโดยวาริรินค่ะ" });
+                await this.broadcastEmbed(embed, subs);
+            }
+            return true;
+        } catch (e) {
+            console.error(`Failed to build daily summary for ${day}:`, e);
+            return false;
         }
     }
 

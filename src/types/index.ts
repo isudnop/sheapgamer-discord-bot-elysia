@@ -27,3 +27,11 @@ export interface StateData {
     last_video_id?: string | null;
     updated_at: string;
 }
+
+// Daily Summary Types
+export interface ArchivedItem {
+    title: string;
+    link: string;
+    content: string;
+    date: string; // ISO
+}
