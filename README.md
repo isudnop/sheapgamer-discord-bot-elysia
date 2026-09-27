@@ -33,6 +33,7 @@ A simple Discord bot rewritten in TypeScript using Bun and ElysiaJS.
 DISCORD_TOKEN=your_token_here
 RSS_URL=https://rss.app/feeds/sadasd.xml
 YOUTUBE_CHANNEL_ID=UCOsdaswsds
+GEMINI_API_KEY=your_gemini_key   # optional, enables Daily Summary
 ```
 
 - Running Locally
@@ -88,6 +89,14 @@ docker run -d --env-file .env -v "%cd%:/app" -p 3000:3000 --name my-rss-bot --re
 `!subscribe_sheapgamer` - Set the current channel for news updates.
 
 `!unsubscribe_sheapgamer` - Stop receiving news in the current server.
+
+`!forcenews_sheapgamer` - Re-post the latest news to this server.
+
+`!summary_sheapgamer` - Post yesterday's Daily Summary to this server now.
+
+### Daily Summary Changelogs
+
+When `GEMINI_API_KEY` is set, every day after 01:00 (Asia/Bangkok) the bot posts a patch-notes style summary of yesterday's News, Deals and Articles, written by Gemini. The bot archives every feed item in `data/news_archive.json` (kept 3 days) because the RSS feed only holds ~25 items.
 
 ### Invite the Bot
 
