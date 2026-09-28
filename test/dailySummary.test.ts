@@ -69,10 +69,10 @@ describe("Daily Summary", () => {
     });
 
     it("splits model output into sections", () => {
-        const sections = parseSections("Here you go:\n## 📰 News\n**[UPDATE]** A\n\n## 💸 Deals\n**[DEAL]** B\n## Empty\n");
+        const sections = parseSections("Here you go:\n## 📰 News\n**[UPDATE]** A\n\n**[EVENT]** C\n## 💸 Deals\n**[DEAL]** B\n## Empty\n");
         expect(sections).toEqual([
-            { title: "📰 News", body: "**[UPDATE]** A" },
-            { title: "💸 Deals", body: "**[DEAL]** B" },
+            { title: "📰 News", body: "**[UPDATE]** A\n.\n**[EVENT]** C\n." },
+            { title: "💸 Deals", body: "**[DEAL]** B\n." },
         ]);
     });
 });

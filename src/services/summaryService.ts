@@ -135,7 +135,8 @@ export function parseSections(text: string): SummarySection[] {
         .filter(Boolean)
         .map(chunk => {
             const [title, ...rest] = chunk.split('\n');
-            let body = rest.join('\n').trim();
+            // One item per line, each followed by a "." line so the embed isn't a wall of text
+            let body = rest.map(l => l.trim()).filter(l => l && l !== '.').map(l => `${l}\n.`).join('\n');
             // Cut at a line break so a [อ่านต่อ](url) link is never split
             if (body.length > 4000) body = body.substring(0, body.lastIndexOf('\n', 3990)) + '\n...';
             return { title: title!.trim(), body };
