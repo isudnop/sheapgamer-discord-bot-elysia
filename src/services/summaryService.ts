@@ -1,9 +1,10 @@
 import fs from 'fs';
 import { RssService, localDay } from '@/services/rssService';
 import type { ArchivedItem } from '@/types';
-import { SUMMARY_STATE_FILE, SUMMARY_HOUR, SUMMARY_TIMEZONE, GEMINI_MODEL } from '@/config/constants';
+import { SUMMARY_STATE_FILE, SUMMARY_TIME, SUMMARY_UTC_OFFSET, SUMMARY_TIMEZONE, GEMINI_MODEL } from '@/config/constants';
 
 const MAX_ATTEMPTS = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface SummarySection {
     title: string;
@@ -11,7 +12,7 @@ export interface SummarySection {
 }
 
 const SYSTEM_PROMPT = `คุณคือ "วาริริน" ผู้ช่วยของเพจ Sheapgamer (ข่าวเกม ดีลเกมราคาถูก และบทความเกม)
-งานของคุณ: สรุปโพสต์ทั้งหมดของเมื่อวานให้อยู่ในรูปแบบ "Patch Notes / Changelog" แบบอัปเดตเกม ให้ผู้อ่านรู้ว่าเมื่อวานเกิดอะไรขึ้นบ้างในเวลาไม่กี่วินาที
+งานของคุณ: สรุปโพสต์ทั้งหมดในช่วง 24 ชั่วโมงที่ผ่านมาให้อยู่ในรูปแบบ "Patch Notes / Changelog" แบบอัปเดตเกม ให้ผู้อ่านรู้ว่า 24 ชั่วโมงที่ผ่านมาเกิดอะไรขึ้นบ้างในเวลาไม่กี่วินาที
 
 รูปแบบผลลัพธ์ (Discord markdown):
 - แบ่งเป็นหมวด โดยแต่ละหมวดขึ้นต้นด้วยบรรทัด "## " ตามด้วยชื่อหมวด ใช้เฉพาะหมวดที่มีโพสต์:
@@ -51,7 +52,12 @@ export class SummaryService {
 
     // Yesterday's date (YYYY-MM-DD) in the summary timezone
     static yesterday(now: Date = new Date()): string {
-        return localDay(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+        return localDay(new Date(now.getTime() - DAY_MS));
+    }
+
+    // Today's SUMMARY_TIME in the summary timezone: the end of the scheduled 24-hour window
+    static windowEnd(now: Date = new Date()): Date {
+        return new Date(`${localDay(now)}T${SUMMARY_TIME}:00${SUMMARY_UTC_OFFSET}`);
     }
 
     private loadState(): { last_summary_day?: string; failed_day?: string; failures?: number } {
@@ -79,19 +85,18 @@ export class SummaryService {
         }
     }
 
-    // True once per day, after SUMMARY_HOUR, until markDone(yesterday)
+    // True once per day, after SUMMARY_TIME, until markDone(yesterday)
     isDue(now: Date = new Date()): boolean {
-        const hour = Number(now.toLocaleString('en-US', { timeZone: SUMMARY_TIMEZONE, hour: 'numeric', hourCycle: 'h23' }));
-        return hour >= SUMMARY_HOUR && this.loadState().last_summary_day !== SummaryService.yesterday(now);
+        return now >= SummaryService.windowEnd(now) && this.loadState().last_summary_day !== SummaryService.yesterday(now);
     }
 
-    // Returns null when there was nothing posted that day
-    async summarize(day: string): Promise<SummarySection[] | null> {
-        const items = this.rssService.getItemsForDay(day).filter(item => !isMeme(item));
+    // Summarizes the 24 hours before `end`. Returns null when nothing was posted in that window
+    async summarize(end: Date): Promise<SummarySection[] | null> {
+        const items = this.rssService.getItemsBetween(new Date(end.getTime() - DAY_MS), end).filter(item => !isMeme(item));
         if (items.length === 0) return null;
 
         const posts = items.map((item, i) =>
-            `#${i + 1} (${new Date(item.date).toLocaleTimeString('th-TH', { timeZone: SUMMARY_TIMEZONE })})\nลิงก์: ${item.link}\n${item.content || item.title}`
+            `#${i + 1} (${new Date(item.date).toLocaleString('th-TH', { timeZone: SUMMARY_TIMEZONE })})\nลิงก์: ${item.link}\n${item.content || item.title}`
         ).join('\n\n---\n\n');
 
         // ponytail: plain fetch to the Gemini REST API, one call doesn't need the SDK
@@ -100,14 +105,14 @@ export class SummaryService {
             headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
             body: JSON.stringify({
                 systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-                contents: [{ role: 'user', parts: [{ text: `โพสต์ทั้งหมดของวันที่ ${day} (${items.length} โพสต์):\n\n${posts}` }] }],
+                contents: [{ role: 'user', parts: [{ text: `โพสต์ทั้งหมดในช่วง 24 ชั่วโมงก่อน ${end.toLocaleString('th-TH', { timeZone: SUMMARY_TIMEZONE })} (${items.length} โพสต์):\n\n${posts}` }] }],
                 generationConfig: { maxOutputTokens: 16000 },
             }),
         });
         if (!res.ok) throw new Error(`Gemini API ${res.status}: ${await res.text()}`);
         const data: any = await res.json();
 
-        console.log(`Daily summary usage for ${day}:`, data.usageMetadata);
+        console.log(`Daily summary usage for ${localDay(end)}:`, data.usageMetadata);
 
         if (data.promptFeedback?.blockReason) {
             throw new Error(`Summary blocked: ${data.promptFeedback.blockReason}`);

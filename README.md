@@ -92,11 +92,11 @@ docker run -d --env-file .env -v "%cd%:/app" -p 3000:3000 --name my-rss-bot --re
 
 `!forcenews_sheapgamer` - Re-post the latest news to this server.
 
-`!summary_sheapgamer` - Post yesterday's Daily Summary to this server now.
+`!summary_sheapgamer` - Post a Daily Summary of the last 24 hours to this server now.
 
 ### Daily Summary Changelogs
 
-When `GEMINI_API_KEY` is set, every day after 07:00 (Asia/Bangkok) the bot posts a patch-notes style summary of yesterday's News, Deals and Articles, written by Gemini. The bot archives every feed item in `data/news_archive.json` (kept 3 days) because the RSS feed only holds ~25 items.
+When `GEMINI_API_KEY` is set, every day at 07:30 (Asia/Bangkok) the bot posts a patch-notes style summary of the previous 24 hours' News, Deals and Articles, written by Gemini. The bot archives every feed item in `data/news_archive.json` (kept 3 days) because the RSS feed only holds ~25 items.
 
 ### Invite the Bot
 

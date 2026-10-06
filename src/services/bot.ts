@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, TextChannel, EmbedBuilder, PermissionsBitField } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
-import { RssService } from '@/services/rssService';
+import { RssService, localDay } from '@/services/rssService';
 import { YoutubeService } from '@/services/youtubeService';
 import { SummaryService } from '@/services/summaryService';
 import type { Subscriptions } from '@/types';
@@ -116,9 +116,9 @@ export class DiscordBot {
                     await message.channel.send("ℹ️ ยังไม่มีการตั้งค่าช่องข่าวสารค่ะ");
                     return;
                 }
-                await message.channel.send("🔄 วาริรินกำลังสรุปข่าวเมื่อวานค่ะ รอสักครู่นะคะ");
+                await message.channel.send("🔄 วาริรินกำลังสรุปข่าว 24 ชั่วโมงที่ผ่านมาค่ะ รอสักครู่นะคะ");
                 // Only this guild, never all subscribers
-                await this.postDailySummary(SummaryService.yesterday(), { [message.guildId!]: channelId });
+                await this.postDailySummary(new Date(), { [message.guildId!]: channelId });
             }
         });
     }
@@ -188,7 +188,7 @@ export class DiscordBot {
         if (!this.summaryService?.isDue()) return;
 
         const day = SummaryService.yesterday();
-        if (await this.postDailySummary(day, this.loadSubscriptions())) {
+        if (await this.postDailySummary(SummaryService.windowEnd(), this.loadSubscriptions())) {
             this.summaryService.markDone(day);
         } else {
             this.summaryService.recordFailure(day);
@@ -196,12 +196,13 @@ export class DiscordBot {
     }
 
     // Returns false on failure so the scheduled run retries on the next tick
-    private async postDailySummary(day: string, subs: Subscriptions): Promise<boolean> {
+    private async postDailySummary(end: Date, subs: Subscriptions): Promise<boolean> {
+        const day = localDay(end);
         console.log(`Building daily summary for ${day}...`);
         try {
-            const sections = await this.summaryService!.summarize(day);
+            const sections = await this.summaryService!.summarize(end);
             if (!sections) {
-                console.log(`No news on ${day}, skipping summary.`);
+                console.log(`No news in the 24 hours before ${end.toISOString()}, skipping summary.`);
                 return true;
             }
 
@@ -212,7 +213,7 @@ export class DiscordBot {
                     .setDescription(section.body)
                     .setColor(0xFFA500); // Orange for Daily Summary
                 if (i === 0) embed.setAuthor({ name: `📜 Sheapgamer Changelog — ${day}` });
-                if (i === sections.length - 1) embed.setFooter({ text: "สรุปข่าวเมื่อวานโดยวาริรินค่ะ" });
+                if (i === sections.length - 1) embed.setFooter({ text: "สรุปข่าว 24 ชั่วโมงที่ผ่านมาโดยวาริรินค่ะ" });
                 await this.broadcastEmbed(embed, subs);
             }
             return true;

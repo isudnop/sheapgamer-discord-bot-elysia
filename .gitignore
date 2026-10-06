@@ -45,3 +45,4 @@ package-lock.json
 news_state.json
 channels.json
 logs/
+HANDOFF.md

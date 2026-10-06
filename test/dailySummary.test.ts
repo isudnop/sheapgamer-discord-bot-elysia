@@ -18,16 +18,19 @@ describe("Daily Summary", () => {
         expect(SummaryService.yesterday(new Date("2026-09-23T03:00:00Z"))).toBe("2026-09-22");
     });
 
-    it("archives the feed and returns only that day's items", () => {
+    it("archives the feed and returns only the 24 hours before the summary time", () => {
         const rss = new RssService("http://fake", TEST_STATE, TEST_ARCHIVE);
         const now = new Date("2026-09-23T03:00:00Z");
         rss.archiveItems([
-            { guid: "a", title: "A", isoDate: "2026-09-21T17:01:00Z" }, // 00:01 BKK 22 Sep
-            { guid: "b", title: "B", isoDate: "2026-09-22T16:59:00Z" }, // 23:59 BKK 22 Sep
-            { guid: "c", title: "C", isoDate: "2026-09-22T17:01:00Z" }, // 23 Sep
+            { guid: "early", title: "Early", isoDate: "2026-09-22T00:29:00Z" }, // 07:29 BKK 22 Sep, previous window
+            { guid: "a", title: "A", isoDate: "2026-09-22T00:30:00Z" }, // 07:30 BKK 22 Sep
+            { guid: "b", title: "B", isoDate: "2026-09-23T00:29:00Z" }, // 07:29 BKK 23 Sep
+            { guid: "c", title: "C", isoDate: "2026-09-23T00:30:00Z" }, // 07:30 BKK 23 Sep, next window
             { guid: "old", title: "Old", isoDate: "2026-09-10T00:00:00Z" }, // pruned
         ], now);
-        expect(rss.getItemsForDay("2026-09-22").map(i => i.title)).toEqual(["A", "B"]);
+        const end = SummaryService.windowEnd(now);
+        expect(end.toISOString()).toBe("2026-09-23T00:30:00.000Z"); // 07:30 BKK
+        expect(rss.getItemsBetween(new Date(end.getTime() - 24 * 60 * 60 * 1000), end).map(i => i.title)).toEqual(["A", "B"]);
         expect(Object.keys(JSON.parse(fs.readFileSync(TEST_ARCHIVE, 'utf-8')))).not.toContain("old");
     });
 
@@ -35,7 +38,7 @@ describe("Daily Summary", () => {
         const rss = new RssService("http://fake", TEST_STATE, TEST_ARCHIVE);
         fs.writeFileSync(TEST_SUMMARY_STATE, "{}"); // not a first deploy
         const summary = new SummaryService(rss, "test-key", TEST_SUMMARY_STATE);
-        expect(summary.isDue(new Date("2026-09-22T23:30:00Z"))).toBe(false); // 06:30 BKK, too early
+        expect(summary.isDue(new Date("2026-09-23T00:29:00Z"))).toBe(false); // 07:29 BKK, too early
         expect(summary.isDue(new Date("2026-09-23T00:30:00Z"))).toBe(true);  // 07:30 BKK
         summary.markDone("2026-09-22");
         expect(summary.isDue(new Date("2026-09-23T00:40:00Z"))).toBe(false);
@@ -58,7 +61,7 @@ describe("Daily Summary", () => {
         rss.archiveItems([{ guid: "a", isoDate: "2026-09-22T05:00:00Z",
             contentSnippet: "ข่าวจริง\n .\n ติดตามเพจใหม่ได้ที่นี่\n -------------------------------\n แนะนำ BullVPN" }],
             new Date("2026-09-22T06:00:00Z"));
-        expect(rss.getItemsForDay("2026-09-22")[0]!.content).toBe("ข่าวจริง\n .");
+        expect(rss.getItemsBetween(new Date("2026-09-22T00:00:00Z"), new Date("2026-09-23T00:00:00Z"))[0]!.content).toBe("ข่าวจริง\n .");
     });
 
     it("detects memes", () => {
