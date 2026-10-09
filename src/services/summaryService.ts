@@ -1,9 +1,11 @@
 import fs from 'fs';
 import { RssService, localDay } from '@/services/rssService';
 import type { ArchivedItem } from '@/types';
-import { SUMMARY_STATE_FILE, SUMMARY_HOUR, SUMMARY_TIMEZONE, GEMINI_MODEL } from '@/config/constants';
+import { SUMMARY_STATE_FILE, SUMMARY_TIME, SUMMARY_UTC_OFFSET, SUMMARY_TIMEZONE, GEMINI_MODEL, GEMINI_FALLBACK_MODELS } from '@/config/constants';
 
 const MAX_ATTEMPTS = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const GEMINI_TIMEOUT_MS = 3 * 60 * 1000;
 
 export interface SummarySection {
     title: string;
@@ -11,7 +13,7 @@ export interface SummarySection {
 }
 
 const SYSTEM_PROMPT = `คุณคือ "วาริริน" ผู้ช่วยของเพจ Sheapgamer (ข่าวเกม ดีลเกมราคาถูก และบทความเกม)
-งานของคุณ: สรุปโพสต์ทั้งหมดของเมื่อวานให้อยู่ในรูปแบบ "Patch Notes / Changelog" แบบอัปเดตเกม ให้ผู้อ่านรู้ว่าเมื่อวานเกิดอะไรขึ้นบ้างในเวลาไม่กี่วินาที
+งานของคุณ: สรุปโพสต์ทั้งหมดในช่วง 24 ชั่วโมงที่ผ่านมาให้อยู่ในรูปแบบ "Patch Notes / Changelog" แบบอัปเดตเกม ให้ผู้อ่านรู้ว่า 24 ชั่วโมงที่ผ่านมาเกิดอะไรขึ้นบ้างในเวลาไม่กี่วินาที
 
 รูปแบบผลลัพธ์ (Discord markdown):
 - แบ่งเป็นหมวด โดยแต่ละหมวดขึ้นต้นด้วยบรรทัด "## " ตามด้วยชื่อหมวด ใช้เฉพาะหมวดที่มีโพสต์:
@@ -51,7 +53,12 @@ export class SummaryService {
 
     // Yesterday's date (YYYY-MM-DD) in the summary timezone
     static yesterday(now: Date = new Date()): string {
-        return localDay(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+        return localDay(new Date(now.getTime() - DAY_MS));
+    }
+
+    // Today's SUMMARY_TIME in the summary timezone: the end of the scheduled 24-hour window
+    static windowEnd(now: Date = new Date()): Date {
+        return new Date(`${localDay(now)}T${SUMMARY_TIME}:00${SUMMARY_UTC_OFFSET}`);
     }
 
     private loadState(): { last_summary_day?: string; failed_day?: string; failures?: number } {
@@ -73,52 +80,70 @@ export class SummaryService {
         const state = this.loadState();
         const failures = state.failed_day === day ? (state.failures ?? 0) + 1 : 1;
         this.saveState({ failed_day: day, failures });
+        console.error(`Daily summary for ${day} failed (attempt ${failures}/${MAX_ATTEMPTS}).`);
         if (failures >= MAX_ATTEMPTS) {
             console.error(`Giving up on daily summary for ${day} after ${failures} attempts.`);
             this.markDone(day);
         }
     }
 
-    // True once per day, after SUMMARY_HOUR, until markDone(yesterday)
+    // True once per day, after SUMMARY_TIME, until markDone(yesterday)
     isDue(now: Date = new Date()): boolean {
-        const hour = Number(now.toLocaleString('en-US', { timeZone: SUMMARY_TIMEZONE, hour: 'numeric', hourCycle: 'h23' }));
-        return hour >= SUMMARY_HOUR && this.loadState().last_summary_day !== SummaryService.yesterday(now);
+        return now >= SummaryService.windowEnd(now) && this.loadState().last_summary_day !== SummaryService.yesterday(now);
     }
 
-    // Returns null when there was nothing posted that day
-    async summarize(day: string): Promise<SummarySection[] | null> {
-        const items = this.rssService.getItemsForDay(day).filter(item => !isMeme(item));
+    // Summarizes the 24 hours before `end`. Returns null when nothing was posted in that window
+    async summarize(end: Date): Promise<SummarySection[] | null> {
+        const items = this.rssService.getItemsBetween(new Date(end.getTime() - DAY_MS), end).filter(item => !isMeme(item));
         if (items.length === 0) return null;
 
         const posts = items.map((item, i) =>
-            `#${i + 1} (${new Date(item.date).toLocaleTimeString('th-TH', { timeZone: SUMMARY_TIMEZONE })})\nลิงก์: ${item.link}\n${item.content || item.title}`
+            `#${i + 1} (${new Date(item.date).toLocaleString('th-TH', { timeZone: SUMMARY_TIMEZONE })})\nลิงก์: ${item.link}\n${item.content || item.title}`
         ).join('\n\n---\n\n');
 
-        // ponytail: plain fetch to the Gemini REST API, one call doesn't need the SDK
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
-            body: JSON.stringify({
-                systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-                contents: [{ role: 'user', parts: [{ text: `โพสต์ทั้งหมดของวันที่ ${day} (${items.length} โพสต์):\n\n${posts}` }] }],
-                generationConfig: { maxOutputTokens: 16000 },
-            }),
+        const body = JSON.stringify({
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: [{ role: 'user', parts: [{ text: `โพสต์ทั้งหมดในช่วง 24 ชั่วโมงก่อน ${end.toLocaleString('th-TH', { timeZone: SUMMARY_TIMEZONE })} (${items.length} โพสต์):\n\n${posts}` }] }],
+            generationConfig: { maxOutputTokens: 16000 },
         });
-        if (!res.ok) throw new Error(`Gemini API ${res.status}: ${await res.text()}`);
+
+        // 503 means the model is overloaded, so fall back to the older models in order
+        const models = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS];
+        let res!: Response;
+        let model!: string;
+        for (model of models) {
+            // ponytail: plain fetch to the Gemini REST API, one call doesn't need the SDK
+            res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+                method: 'POST',
+                // Without a timeout a stalled request never throws, so nothing would ever reach the logs
+                signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
+                body,
+            });
+            if (res.status !== 503 || model === models.at(-1)) break;
+            console.warn(`Gemini API 503 from ${model}, falling back to the next model: ${(await res.text()).substring(0, 300)}`);
+        }
+        const context = `model=${model}, posts=${items.length}`;
+        if (!res.ok) throw new Error(`Gemini API ${res.status} (${context}): ${await res.text()}`);
         const data: any = await res.json();
 
-        console.log(`Daily summary usage for ${day}:`, data.usageMetadata);
+        console.log(`Daily summary usage for ${localDay(end)} (${model}):`, data.usageMetadata);
 
         if (data.promptFeedback?.blockReason) {
-            throw new Error(`Summary blocked: ${data.promptFeedback.blockReason}`);
+            throw new Error(`Summary blocked: ${data.promptFeedback.blockReason} (${context}): ${JSON.stringify(data.promptFeedback)}`);
         }
         const candidate = data.candidates?.[0];
         if (candidate?.finishReason !== 'STOP') {
-            throw new Error(`Summary did not finish: ${candidate?.finishReason ?? 'no candidate'}`);
+            // Everything but the generated text: finishMessage, safetyRatings, usage...
+            const detail = JSON.stringify({ ...data, candidates: data.candidates?.map(({ content, ...rest }: any) => rest) });
+            throw new Error(`Summary did not finish: ${candidate?.finishReason ?? 'no candidate'} (${context}): ${detail.substring(0, 1500)}`);
         }
 
         const text = (candidate.content?.parts ?? []).map((p: any) => p.text ?? '').join('');
-        return parseSections(text);
+        const sections = parseSections(text);
+        // Nothing gets posted in this case, so leave a trace of what the model actually said
+        if (sections.length === 0) console.warn(`Daily summary for ${localDay(end)} has no "## " sections (${context}). Raw output: ${text.substring(0, 1500)}`);
+        return sections;
     }
 }
 
@@ -135,7 +160,8 @@ export function parseSections(text: string): SummarySection[] {
         .filter(Boolean)
         .map(chunk => {
             const [title, ...rest] = chunk.split('\n');
-            let body = rest.join('\n').trim();
+            // One item per line, each followed by a "." line so the embed isn't a wall of text
+            let body = rest.map(l => l.trim()).filter(l => l && l !== '.').map(l => `${l}\n.`).join('\n');
             // Cut at a line break so a [อ่านต่อ](url) link is never split
             if (body.length > 4000) body = body.substring(0, body.lastIndexOf('\n', 3990)) + '\n...';
             return { title: title!.trim(), body };

@@ -163,10 +163,10 @@ export class RssService {
         fs.writeFileSync(this.archiveFile, JSON.stringify(archive, null, 2));
     }
 
-    // All archived items published on `day` (YYYY-MM-DD, summary timezone), oldest first
-    getItemsForDay(day: string): ArchivedItem[] {
+    // All archived items published in [start, end), oldest first
+    getItemsBetween(start: Date, end: Date): ArchivedItem[] {
         return Object.values(this.loadArchive())
-            .filter(a => localDay(new Date(a.date)) === day)
+            .filter(a => { const t = new Date(a.date).getTime(); return t >= start.getTime() && t < end.getTime(); })
             .sort((a, b) => a.date.localeCompare(b.date));
     }
 
