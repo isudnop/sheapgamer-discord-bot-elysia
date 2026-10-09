@@ -46,3 +46,6 @@ news_state.json
 channels.json
 logs/
 HANDOFF.md
+# graphify
+graphify-out/manifest.json
+graphify-out/cost.json
