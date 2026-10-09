@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { RssService, localDay } from '@/services/rssService';
 import type { ArchivedItem } from '@/types';
-import { SUMMARY_STATE_FILE, SUMMARY_TIME, SUMMARY_UTC_OFFSET, SUMMARY_TIMEZONE, GEMINI_MODEL } from '@/config/constants';
+import { SUMMARY_STATE_FILE, SUMMARY_TIME, SUMMARY_UTC_OFFSET, SUMMARY_TIMEZONE, GEMINI_MODEL, GEMINI_FALLBACK_MODELS } from '@/config/constants';
 
 const MAX_ATTEMPTS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -101,23 +101,33 @@ export class SummaryService {
             `#${i + 1} (${new Date(item.date).toLocaleString('th-TH', { timeZone: SUMMARY_TIMEZONE })})\nลิงก์: ${item.link}\n${item.content || item.title}`
         ).join('\n\n---\n\n');
 
-        // ponytail: plain fetch to the Gemini REST API, one call doesn't need the SDK
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
-            method: 'POST',
-            // Without a timeout a stalled request never throws, so nothing would ever reach the logs
-            signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
-            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
-            body: JSON.stringify({
-                systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-                contents: [{ role: 'user', parts: [{ text: `โพสต์ทั้งหมดในช่วง 24 ชั่วโมงก่อน ${end.toLocaleString('th-TH', { timeZone: SUMMARY_TIMEZONE })} (${items.length} โพสต์):\n\n${posts}` }] }],
-                generationConfig: { maxOutputTokens: 16000 },
-            }),
+        const body = JSON.stringify({
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: [{ role: 'user', parts: [{ text: `โพสต์ทั้งหมดในช่วง 24 ชั่วโมงก่อน ${end.toLocaleString('th-TH', { timeZone: SUMMARY_TIMEZONE })} (${items.length} โพสต์):\n\n${posts}` }] }],
+            generationConfig: { maxOutputTokens: 16000 },
         });
-        const context = `model=${GEMINI_MODEL}, posts=${items.length}`;
+
+        // 503 means the model is overloaded, so fall back to the older models in order
+        const models = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS];
+        let res!: Response;
+        let model!: string;
+        for (model of models) {
+            // ponytail: plain fetch to the Gemini REST API, one call doesn't need the SDK
+            res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+                method: 'POST',
+                // Without a timeout a stalled request never throws, so nothing would ever reach the logs
+                signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
+                body,
+            });
+            if (res.status !== 503 || model === models.at(-1)) break;
+            console.warn(`Gemini API 503 from ${model}, falling back to the next model: ${(await res.text()).substring(0, 300)}`);
+        }
+        const context = `model=${model}, posts=${items.length}`;
         if (!res.ok) throw new Error(`Gemini API ${res.status} (${context}): ${await res.text()}`);
         const data: any = await res.json();
 
-        console.log(`Daily summary usage for ${localDay(end)}:`, data.usageMetadata);
+        console.log(`Daily summary usage for ${localDay(end)} (${model}):`, data.usageMetadata);
 
         if (data.promptFeedback?.blockReason) {
             throw new Error(`Summary blocked: ${data.promptFeedback.blockReason} (${context}): ${JSON.stringify(data.promptFeedback)}`);

@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "bun:test";
 import fs from 'fs';
 import { RssService, localDay } from "@/services/rssService";
 import { SummaryService, parseSections, isMeme } from "@/services/summaryService";
+import { GEMINI_MODEL, GEMINI_FALLBACK_MODELS } from "@/config/constants";
 
 const TEST_STATE = "test_summary_rss_state.json";
 const TEST_ARCHIVE = "test_summary_archive.json";
@@ -77,5 +78,40 @@ describe("Daily Summary", () => {
             { title: "📰 News", body: "**[UPDATE]** A\n.\n**[EVENT]** C\n." },
             { title: "💸 Deals", body: "**[DEAL]** B\n." },
         ]);
+    });
+
+    it("falls back to the next model on 503", async () => {
+        const rss = new RssService("http://fake", TEST_STATE, TEST_ARCHIVE);
+        const end = new Date("2026-09-23T00:30:00Z");
+        rss.archiveItems([{ guid: "a", title: "A", contentSnippet: "ข่าว A", isoDate: "2026-09-22T12:00:00Z" }], end);
+        fs.writeFileSync(TEST_SUMMARY_STATE, "{}");
+        const summary = new SummaryService(rss, "test-key", TEST_SUMMARY_STATE);
+
+        const ok = { candidates: [{ finishReason: "STOP", content: { parts: [{ text: "## 📰 News\n**[UPDATE]** A" }] } }] };
+        const realFetch = globalThis.fetch;
+        const called: string[] = [];
+        const mock = (statuses: number[]) => {
+            called.length = 0;
+            globalThis.fetch = (async (url: string) => {
+                called.push(url.match(/models\/(.+):/)![1]!);
+                const status = statuses[called.length - 1]!;
+                return new Response(status === 200 ? JSON.stringify(ok) : "overloaded", { status });
+            }) as any;
+        };
+        try {
+            mock([503, 200]);
+            expect(await summary.summarize(end)).toEqual([{ title: "📰 News", body: "**[UPDATE]** A\n." }]);
+            expect(called).toEqual([GEMINI_MODEL, GEMINI_FALLBACK_MODELS[0]!]);
+
+            mock([500]); // only 503 falls back
+            await expect(summary.summarize(end)).rejects.toThrow("Gemini API 500");
+            expect(called).toEqual([GEMINI_MODEL]);
+
+            mock([503, 503, 503]); // every model overloaded
+            await expect(summary.summarize(end)).rejects.toThrow("Gemini API 503");
+            expect(called).toEqual([GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS]);
+        } finally {
+            globalThis.fetch = realFetch;
+        }
     });
 });

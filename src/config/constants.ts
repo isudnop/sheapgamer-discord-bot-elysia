@@ -15,3 +15,5 @@ export const SUMMARY_TIME = "07:30"; // post the last 24 hours' summary at this 
 export const SUMMARY_UTC_OFFSET = "+07:00";
 export const ARCHIVE_KEEP_DAYS = 3;
 export const GEMINI_MODEL = Bun.env.GEMINI_MODEL || "gemini-3.8-flash";
+// Tried in order when the model before it answers 503 (overloaded)
+export const GEMINI_FALLBACK_MODELS = (Bun.env.GEMINI_FALLBACK_MODELS ?? "gemini-3.6-flash,gemini-3.5-flash").split(",").map(m => m.trim()).filter(m => m && m !== GEMINI_MODEL);
