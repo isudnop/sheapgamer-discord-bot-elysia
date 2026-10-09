@@ -5,6 +5,7 @@ import { SUMMARY_STATE_FILE, SUMMARY_TIME, SUMMARY_UTC_OFFSET, SUMMARY_TIMEZONE,
 
 const MAX_ATTEMPTS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const GEMINI_TIMEOUT_MS = 3 * 60 * 1000;
 
 export interface SummarySection {
     title: string;
@@ -79,6 +80,7 @@ export class SummaryService {
         const state = this.loadState();
         const failures = state.failed_day === day ? (state.failures ?? 0) + 1 : 1;
         this.saveState({ failed_day: day, failures });
+        console.error(`Daily summary for ${day} failed (attempt ${failures}/${MAX_ATTEMPTS}).`);
         if (failures >= MAX_ATTEMPTS) {
             console.error(`Giving up on daily summary for ${day} after ${failures} attempts.`);
             this.markDone(day);
@@ -102,6 +104,8 @@ export class SummaryService {
         // ponytail: plain fetch to the Gemini REST API, one call doesn't need the SDK
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
             method: 'POST',
+            // Without a timeout a stalled request never throws, so nothing would ever reach the logs
+            signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
             headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
             body: JSON.stringify({
                 systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
@@ -109,21 +113,27 @@ export class SummaryService {
                 generationConfig: { maxOutputTokens: 16000 },
             }),
         });
-        if (!res.ok) throw new Error(`Gemini API ${res.status}: ${await res.text()}`);
+        const context = `model=${GEMINI_MODEL}, posts=${items.length}`;
+        if (!res.ok) throw new Error(`Gemini API ${res.status} (${context}): ${await res.text()}`);
         const data: any = await res.json();
 
         console.log(`Daily summary usage for ${localDay(end)}:`, data.usageMetadata);
 
         if (data.promptFeedback?.blockReason) {
-            throw new Error(`Summary blocked: ${data.promptFeedback.blockReason}`);
+            throw new Error(`Summary blocked: ${data.promptFeedback.blockReason} (${context}): ${JSON.stringify(data.promptFeedback)}`);
         }
         const candidate = data.candidates?.[0];
         if (candidate?.finishReason !== 'STOP') {
-            throw new Error(`Summary did not finish: ${candidate?.finishReason ?? 'no candidate'}`);
+            // Everything but the generated text: finishMessage, safetyRatings, usage...
+            const detail = JSON.stringify({ ...data, candidates: data.candidates?.map(({ content, ...rest }: any) => rest) });
+            throw new Error(`Summary did not finish: ${candidate?.finishReason ?? 'no candidate'} (${context}): ${detail.substring(0, 1500)}`);
         }
 
         const text = (candidate.content?.parts ?? []).map((p: any) => p.text ?? '').join('');
-        return parseSections(text);
+        const sections = parseSections(text);
+        // Nothing gets posted in this case, so leave a trace of what the model actually said
+        if (sections.length === 0) console.warn(`Daily summary for ${localDay(end)} has no "## " sections (${context}). Raw output: ${text.substring(0, 1500)}`);
+        return sections;
     }
 }
 

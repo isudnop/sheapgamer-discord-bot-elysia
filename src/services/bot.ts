@@ -118,7 +118,9 @@ export class DiscordBot {
                 }
                 await message.channel.send("🔄 วาริรินกำลังสรุปข่าว 24 ชั่วโมงที่ผ่านมาค่ะ รอสักครู่นะคะ");
                 // Only this guild, never all subscribers
-                await this.postDailySummary(new Date(), { [message.guildId!]: channelId });
+                const error = await this.postDailySummary(new Date(), { [message.guildId!]: channelId });
+                // Admin-only command, so the raw error is fine here. Scheduled failures stay in the logs
+                if (error) await message.channel.send(`❌ สรุปข่าวไม่สำเร็จค่ะ\n\`\`\`\n${error.substring(0, 1800)}\n\`\`\``);
             }
         });
     }
@@ -188,22 +190,23 @@ export class DiscordBot {
         if (!this.summaryService?.isDue()) return;
 
         const day = SummaryService.yesterday();
-        if (await this.postDailySummary(SummaryService.windowEnd(), this.loadSubscriptions())) {
-            this.summaryService.markDone(day);
-        } else {
+        const error = await this.postDailySummary(SummaryService.windowEnd(), this.loadSubscriptions());
+        if (error) {
             this.summaryService.recordFailure(day);
+        } else {
+            this.summaryService.markDone(day);
         }
     }
 
-    // Returns false on failure so the scheduled run retries on the next tick
-    private async postDailySummary(end: Date, subs: Subscriptions): Promise<boolean> {
+    // Returns the error message on failure (null on success) so the scheduled run retries on the next tick
+    private async postDailySummary(end: Date, subs: Subscriptions): Promise<string | null> {
         const day = localDay(end);
         console.log(`Building daily summary for ${day}...`);
         try {
             const sections = await this.summaryService!.summarize(end);
             if (!sections) {
                 console.log(`No news in the 24 hours before ${end.toISOString()}, skipping summary.`);
-                return true;
+                return null;
             }
 
             // One embed per message: Discord caps a message's embeds at 6000 chars total
@@ -216,10 +219,11 @@ export class DiscordBot {
                 if (i === sections.length - 1) embed.setFooter({ text: "สรุปข่าว 24 ชั่วโมงที่ผ่านมาโดยวาริรินค่ะ" });
                 await this.broadcastEmbed(embed, subs);
             }
-            return true;
+            console.log(`Daily summary for ${day} posted (${sections.length} sections).`);
+            return null;
         } catch (e) {
             console.error(`Failed to build daily summary for ${day}:`, e);
-            return false;
+            return e instanceof Error ? `${e.name}: ${e.message}` : String(e);
         }
     }
 
